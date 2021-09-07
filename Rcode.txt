@@ -1,0 +1,227 @@
+#########  九格  #########################################
+
+setwd("C:\\Users\\35578\\Desktop\\肿瘤cox\\新数据")
+rm(list=ls())
+load("MyEnv.RData")
+
+{ library(pec)
+  library("mfp")
+  library("survMisc")
+  library("Hmisc")
+  library("compareC")
+  library("rms")
+  library(sampling)
+  library(survivalROC)
+  library(survAUC)
+  library(pROC)
+  library(PRROC)
+  library(randomForestSRC)
+  library("survminer")
+  c.f.text <- function(c.f){
+    c.f.cindex <- max(c.f[1], 1-c.f[1])
+    c.f.SE.196 <- 1.96*c.f[3]/2
+    c.f.value <- round(c(c.f.cindex,max(c.f.cindex-c.f.SE.196,0),min(c.f.cindex+c.f.SE.196,1)),3)
+    c.f.tex <- paste0(c.f.value[1], "(", c.f.value[2], "-", c.f.value[3], ")")
+    return(c.f.tex)}
+  my.sens.spec <- function(a,b,c,y,lp,cutoff=0.7,cutoff2=0.6){
+    x <- a;x2 <- b
+    a <- a[x>cutoff & x2>cutoff2]
+    b <- b[x>cutoff & x2>cutoff2]
+    c <- c[x>cutoff & x2>cutoff2]
+    yue <- a+b
+    my.max.id <- which(yue == max(yue))
+    my.conf.matr <- table(y, lp>=c[my.max.id])
+    e1 <- my.conf.matr[2,2]
+    n1 <- sum(my.conf.matr[2,])
+    p1 <- e1 / n1
+    sp1 <- sqrt(p1*(1-p1)/n1)
+    text1 <- paste0("sens=",round(p1,3),"(",round(p1-1.96*sp1,3),"-",round(p1+1.96*sp1,3),")")
+    e2 <- my.conf.matr[1,1]
+    n2 <- sum(my.conf.matr[1,])
+    p2 <- e2 / n2
+    sp2 <- sqrt(p2*(1-p2)/n2)
+    text2 <- paste0("spec=",round(p2,3),"(",round(p2-1.96*sp2,3),"-",round(p2+1.96*sp2,3),")")
+    text3 <- paste0("thresholds=",c[my.max.id])
+    outcome <- list()
+    outcome$text <- c(text1, text2,text3)
+    outcome$sens <- paste0(round(p1,3),"(",round(p1-1.96*sp1,3),"-",round(p1+1.96*sp1,3),")")
+    outcome$spec <- paste0(round(p2,3),"(",round(p2-1.96*sp2,3),"-",round(p2+1.96*sp2,3),")")
+    outcome$thershold <- c[my.max.id]
+    outcome$conf.mat <- my.conf.matr
+    return(outcome)
+  }
+}
+
+# 1 full
+modRFSRC.OS <- modRFSRC.OS.full
+modRFSRC.PFS <- modRFSRC.PFS.full
+
+my.i <- 4
+par(mfrow=c(3,3), mar=c(my.i,my.i,my.i,2), mgp=c(1.3,0.6,0),
+    xaxs="i", yaxs="i")
+
+{
+  my.gender <- 2
+  my.age <- 55
+  my.EBVDNA <- 13500
+  my.stage <- 4
+  my.Tv <- c(25, 35, 65)
+  my.Lv <- c(16, 60, 126)
+}
+
+#### predictSurvProb 函数 ####
+# PFS
+for (i in 1:3) {
+  for (j in 1:3) {
+    # plot predict curve
+    new.data <- data.frame(gender=my.gender,
+                           age=my.age,
+                           EBVDNA=my.EBVDNA,
+                           stage=my.stage,
+                           Tv=my.Tv[j],
+                           Lv=my.Lv[i])
+    new.data.treat1 <- new.data.treat2 <- new.data
+    temp.treat <- factor(c(1,2), levels = c(1,2))
+    temp.stage <- factor(c(2,3,4), levels = c(2,3,4))
+    new.data.treat1$stage <- temp.stage[new.data.treat1$stage==temp.stage]
+    new.data.treat2$stage <- temp.stage[new.data.treat2$stage==temp.stage]
+    new.data.treat1$treat <- temp.treat[1]
+    new.data.treat2$treat <- temp.treat[2]
+    
+    # PFS
+    p.treat.1 <- predictSurvProb(modRFSRC.PFS, newdata = new.data.treat1, time=seq(1,60,0.1))
+    p.treat.2 <- predictSurvProb(modRFSRC.PFS, newdata = new.data.treat2, time=seq(1,60,0.1))
+    vec.len <- length(p.treat.1)
+    plot(seq(1,60,0.1),p.treat.2,ylim=c(0,1),type="l",lwd = 2, lty=1,
+         col="red",main="PFS curves",xlab="Time",ylab="S(t|X)",xaxt="n")
+    axis(1,at=seq(0,60,12))
+    polygon(c(seq(1,60,0.1),rev(seq(1,60,0.1))), c(p.treat.2,rep(0,vec.len)),
+            xpd = FALSE, col = "orange", lwd = 1, border = NA)
+    lines(seq(1,60,0.1),p.treat.2,ylim=c(0,1),type="l",lwd = 2, lty=1,
+          col="red",main="Survival curves",xlab="Time",ylab="S(t|X)")
+    polygon(c(seq(1,60,0.1),rev(seq(1,60,0.1))), c(p.treat.1,rep(0,vec.len)),
+            xpd = FALSE, col = "#00C957", lwd = 1, border = NA)
+    lines(seq(1,60,0.1),p.treat.1,ylim=c(0,1),type="l",lwd = 2, lty=1,
+          col="#3D9140",main="PFS curves",xlab="Time",ylab="S(t|X)")
+    rate.text.PFS <- paste(round((sum(p.treat.2)/sum(p.treat.1)-1)*100,2),"%")
+    legend("bottomleft",inset=c(0.04,0.03),bg="transparent", bty="n",title=paste0("treatment ","[Rate=",rate.text.PFS,"]"), c("treatment=2", "treatment=1"),
+           lty=c(1,1),lwd=c(2,2) , col=c("red","#3D9140"))
+  }
+}
+# OS
+for (i in 1:3) {
+  for (j in 1:3) {
+    # plot predict curve
+    new.data <- data.frame(gender=my.gender,
+                           age=my.age,
+                           EBVDNA=my.EBVDNA,
+                           stage=my.stage,
+                           Tv=my.Tv[j],
+                           Lv=my.Lv[i])
+    new.data.treat1 <- new.data.treat2 <- new.data
+    temp.treat <- factor(c(1,2), levels = c(1,2))
+    temp.stage <- factor(c(2,3,4), levels = c(2,3,4))
+    new.data.treat1$stage <- temp.stage[new.data.treat1$stage==temp.stage]
+    new.data.treat2$stage <- temp.stage[new.data.treat2$stage==temp.stage]
+    new.data.treat1$treat <- temp.treat[1]
+    new.data.treat2$treat <- temp.treat[2]
+    
+    # OS
+    p.treat.1 <- predictSurvProb(modRFSRC.OS, newdata = new.data.treat1, time=seq(1,60,0.1))
+    p.treat.2 <- predictSurvProb(modRFSRC.OS, newdata = new.data.treat2, time=seq(1,60,0.1))
+    vec.len <- length(p.treat.1)
+    plot(seq(1,60,0.1),p.treat.2,ylim=c(0,1),type="l",lwd = 2, lty=1,
+         col="red",main="OS curves",xlab="Time",ylab="S(t|X)",xaxt="n")
+    axis(1,at=seq(0,60,12))
+    polygon(c(seq(1,60,0.1),rev(seq(1,60,0.1))), c(p.treat.2,rep(0,vec.len)), 
+            xpd = FALSE, col = "orange", lwd = 1, border = NA)
+    lines(seq(1,60,0.1),p.treat.2,ylim=c(0,1),type="l",lwd = 2, lty=1,
+          col="red",main="OS curves",xlab="Time",ylab="S(t|X)")
+    polygon(c(seq(1,60,0.1),rev(seq(1,60,0.1))), c(p.treat.1,rep(0,vec.len)), 
+            xpd = FALSE, col = "#00C957", lwd = 1, border = NA)
+    lines(seq(1,60,0.1),p.treat.1,ylim=c(0,1),type="l",lwd = 2, lty=1,
+          col="#3D9140",main="OS curves",xlab="Time",ylab="S(t|X)")
+    rate.text.OS <- paste(round((sum(p.treat.2)/sum(p.treat.1)-1)*100,2),"%")
+    legend("bottomleft",inset=c(0.04,0.03),bg="transparent", bty="n",title=paste0("treatment ","[Rate=",rate.text.OS,"]"), c("treatment=2", "treatment=1"),
+           lty=c(1,1),lwd=c(2,2) , col=c("red","#3D9140"))
+  }
+}
+
+
+#### predic 函数 ####
+# PFS
+for (i in 1:3) {
+  for (j in 1:3) {
+    # plot predict curve
+    new.data <- data.frame(gender=my.gender,
+                           age=my.age,
+                           EBVDNA=my.EBVDNA,
+                           stage=my.stage,
+                           Tv=my.Tv[j],
+                           Lv=my.Lv[i])
+    new.data.treat1 <- new.data.treat2 <- new.data
+    temp.treat <- factor(c(1,2), levels = c(1,2))
+    temp.stage <- factor(c(2,3,4), levels = c(2,3,4))
+    new.data.treat1$stage <- temp.stage[new.data.treat1$stage==temp.stage]
+    new.data.treat2$stage <- temp.stage[new.data.treat2$stage==temp.stage]
+    new.data.treat1$treat <- temp.treat[1]
+    new.data.treat2$treat <- temp.treat[2]
+    
+    # PFS
+    p.treat.1 <- predict(modRFSRC.PFS, newdata = new.data.treat1)$survival[1:60]
+    p.treat.2 <- predict(modRFSRC.PFS, newdata = new.data.treat2)$survival[1:60]
+    vec.len <- length(p.treat.1)
+    plot(seq(1,60,1),p.treat.2,ylim=c(0,1),type="l",lwd = 2, lty=1,
+         col="red",main="PFS curves",xlab="Time",ylab="S(t|X)",xaxt="n")
+    axis(1,at=seq(0,60,12))
+    polygon(c(seq(1,60,1),rev(seq(1,60,1))), c(p.treat.2,rep(0,vec.len)), 
+            xpd = FALSE, col = "orange", lwd = 1, border = NA)
+    lines(seq(1,60,1),p.treat.2,ylim=c(0,1),type="l",lwd = 2, lty=1,
+          col="red",main="Survival curves",xlab="Time",ylab="S(t|X)")
+    polygon(c(seq(1,60,1),rev(seq(1,60,1))), c(p.treat.1,rep(0,vec.len)), 
+            xpd = FALSE, col = "#00C957", lwd = 1, border = NA)
+    lines(seq(1,60,1),p.treat.1,ylim=c(0,1),type="l",lwd = 2, lty=1,
+          col="#3D9140",main="PFS curves",xlab="Time",ylab="S(t|X)")
+    rate.text.PFS <- paste(round((sum(p.treat.2)/sum(p.treat.1)-1)*100,2),"%")
+    legend("bottomleft",inset=c(0.04,0.03),bg="transparent", bty="n",title=paste0("treatment ","[Rate=",rate.text.PFS,"]"), c("treatment=2", "treatment=1"),
+           lty=c(1,1),lwd=c(2,2) , col=c("red","#3D9140"))
+  }
+}
+# OS
+for (i in 1:3) {
+  for (j in 1:3) {
+    # plot predict curve
+    new.data <- data.frame(gender=my.gender,
+                           age=my.age,
+                           EBVDNA=my.EBVDNA,
+                           stage=my.stage,
+                           Tv=my.Tv[j],
+                           Lv=my.Lv[i])
+    new.data.treat1 <- new.data.treat2 <- new.data
+    temp.treat <- factor(c(1,2), levels = c(1,2))
+    temp.stage <- factor(c(2,3,4), levels = c(2,3,4))
+    new.data.treat1$stage <- temp.stage[new.data.treat1$stage==temp.stage]
+    new.data.treat2$stage <- temp.stage[new.data.treat2$stage==temp.stage]
+    new.data.treat1$treat <- temp.treat[1]
+    new.data.treat2$treat <- temp.treat[2]
+    
+    # OS
+    p.treat.1 <- predict(modRFSRC.OS, newdata = new.data.treat1)$survival[1:60]
+    p.treat.2 <- predict(modRFSRC.OS, newdata = new.data.treat2)$survival[1:60]
+    vec.len <- length(p.treat.1)
+    plot(seq(1,60,1),p.treat.2,ylim=c(0,1),type="l",lwd = 2, lty=1,
+         col="red",main="PFS curves",xlab="Time",ylab="S(t|X)",xaxt="n")
+    axis(1,at=seq(0,60,12))
+    polygon(c(seq(1,60,1),rev(seq(1,60,1))), c(p.treat.2,rep(0,vec.len)), 
+            xpd = FALSE, col = "orange", lwd = 1, border = NA)
+    lines(seq(1,60,1),p.treat.2,ylim=c(0,1),type="l",lwd = 2, lty=1,
+          col="red",main="Survival curves",xlab="Time",ylab="S(t|X)")
+    polygon(c(seq(1,60,1),rev(seq(1,60,1))), c(p.treat.1,rep(0,vec.len)), 
+            xpd = FALSE, col = "#00C957", lwd = 1, border = NA)
+    lines(seq(1,60,1),p.treat.1,ylim=c(0,1),type="l",lwd = 2, lty=1,
+          col="#3D9140",main="PFS curves",xlab="Time",ylab="S(t|X)")
+    rate.text.PFS <- paste(round((sum(p.treat.2)/sum(p.treat.1)-1)*100,2),"%")
+    legend("bottomleft",inset=c(0.04,0.03),bg="transparent", bty="n",title=paste0("treatment ","[Rate=",rate.text.PFS,"]"), c("treatment=2", "treatment=1"),
+           lty=c(1,1),lwd=c(2,2) , col=c("red","#3D9140"))
+  }
+}
